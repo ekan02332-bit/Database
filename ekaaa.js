@@ -66,7 +66,16 @@ function isAdminUser(ctx) {
 
 function isPremiumUser(ctx) {
     const id = ctx.from?.id?.toString();
-    return premiums.includes(id) || admins.includes(id) || OWNER_IDS.includes(id);
+    if (premiums.includes(id) || admins.includes(id) || OWNER_IDS.includes(id)) return true;
+    
+    // Cek apakah chat di grup premium
+    if (ctx.chat?.type === 'group' || ctx.chat?.type === 'supergroup') {
+        if (isGroupPremium(ctx.chat.id.toString())) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 function isAllowedAccess(ctx) {
@@ -148,6 +157,33 @@ function getRuntime() {
     return `${days}d ${hours}h ${minutes}m ${seconds}s`;
 }
 
+// ============= DATA PREMIUM GROUP =============
+let premiumGroups = [];
+
+function savePremiumGroups() {
+    try {
+        fs.writeFileSync('./premgrup.json', JSON.stringify(premiumGroups, null, 2));
+    } catch (e) {
+        console.log(chalk.red('❌ Gagal save premium group:'), e.message);
+    }
+}
+
+function loadPremiumGroups() {
+    try {
+        if (fs.existsSync('./premgrup.json')) {
+            const data = fs.readFileSync('./premgrup.json', 'utf-8');
+            premiumGroups = JSON.parse(data) || [];
+        }
+    } catch (e) {
+        console.log(chalk.red('❌ Gagal load premium group:'), e.message);
+        premiumGroups = [];
+    }
+}
+
+function isGroupPremium(groupId) {
+    return premiumGroups.includes(groupId.toString());
+}
+
 // ============= DASHBOARD =============
 const styles = ["primary", "success", "danger"];
 let styleIndex = 0;
@@ -224,46 +260,27 @@ Tap salah satu tombol di bawah untuk mulai.`;
 // ============= SETTINGS TEKS =============
 const SETTINGS_TEXT = `
 <blockquote>
-<strong>⚙️ SETTINGS MENU</strong>
+<strong>⚙️ CONTROLS MENU</strong>
 </blockquote>
 
 <blockquote>
-<strong>📋 COMMAND LIST</strong>
-</blockquote>
-
-<blockquote>
-<strong>👑 OWNER COMMANDS</strong>
-├ /addadmin <id>   - Tambah admin
-├ /delladmin <id>  - Hapus admin
-├ /killbot         - Hapus session + restart
-└ /update          - Update bot dari GitHub + restart
-</blockquote>
-
-<blockquote>
-<strong>🛡️ ADMIN COMMANDS</strong>
-├ /addpremium <id>  - Tambah premium
-├ /dellprem <id>    - Hapus premium
-├ /addbot <no>      - Pairing WA
-├ /removebot <no>   - Hapus bot/sender
-├ /listadmin        - Lihat daftar admin
-└ /listroles        - Lihat semua role
-</blockquote>
-
-<blockquote>
-<strong>⭐ PREMIUM COMMANDS</strong>
-└ /listpremium      - Lihat daftar premium
-</blockquote>
-
-<blockquote>
-<strong>🌐 PUBLIC COMMANDS</strong>
-├ /start            - Buka dashboard
-├ /ping             - Cek respon
-└ /myrole           - Cek role sendiri
-</blockquote>
-
-<blockquote>
-<strong>⚠️ GUEST</strong>
-Tidak bisa menggunakan bot!
+📋 COMMAND LIST
+/addbot - Add Sender
+/setcd - Set Cooldown
+/killbot - Reset Session
+/addadmin - Add Admin
+/delladmin - Delete Admin
+/listadmin - List Admin
+/claim - Premium 30d In Member
+/blockcmd - Block Command
+/unblockcmd - Unblock Command
+/cmd - List Command
+/update - Update ke versi baru
+/addpremgrup - Add Premium Group
+/delpremgrup - Delete Premium Group
+/addprem - Add Prem
+/delprem - Delete Prem
+/listprem - List Premium
 </blockquote>
 `;
 
@@ -271,32 +288,44 @@ Tidak bisa menggunakan bot!
 
 // START
 bot.start(async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const role = getUserRole(userId);
-    
-    if (role === 'guest') {
-        return ctx.reply('😹');
-    }
-
-    const sent = await ctx.replyWithPhoto(BANNER_IMAGE, {
-        caption: buildStartText(ctx),
-        parse_mode: "HTML",
-        ...getAnimatedKeyboard()
-    });
-
-    if (menuAnimation) clearInterval(menuAnimation);
-    menuAnimation = setInterval(async () => {
-        try {
-            await ctx.telegram.editMessageReplyMarkup(
-                ctx.chat.id,
-                sent.message_id,
-                undefined,
-                getAnimatedKeyboard().reply_markup
-            );
-        } catch (e) {
-            clearInterval(menuAnimation);
+    try {
+        const userId = ctx.from.id.toString();
+        const role = getUserRole(userId);
+        
+        if (role === 'guest') {
+            return ctx.reply('😹');
         }
-    }, 2000);
+
+        if (menuAnimation) {
+            clearInterval(menuAnimation);
+            menuAnimation = null;
+        }
+
+        const sent = await ctx.replyWithPhoto(BANNER_IMAGE, {
+            caption: buildStartText(ctx),
+            parse_mode: "HTML",
+            ...getAnimatedKeyboard()
+        });
+
+        if (menuAnimation) clearInterval(menuAnimation);
+        menuAnimation = setInterval(async () => {
+            try {
+                await ctx.telegram.editMessageReplyMarkup(
+                    ctx.chat.id,
+                    sent.message_id,
+                    undefined,
+                    getAnimatedKeyboard().reply_markup
+                );
+            } catch (e) {
+                clearInterval(menuAnimation);
+                menuAnimation = null;
+            }
+        }, 2000);
+
+    } catch (err) {
+        console.log(chalk.red('❌ Error start:'), err.message);
+        await ctx.reply('❌ Error opening dashboard!');
+    }
 });
 
 // TOOLS MENU
@@ -409,23 +438,52 @@ bot.action("info", async (ctx) => {
 
 // SETTINGS
 bot.action("settings", async (ctx) => {
-    if (!isAllowedAccess(ctx)) {
-        await logGuestActivity(ctx);
-        return ctx.answerCbQuery("😹");
-    }
-    if (menuAnimation) clearInterval(menuAnimation);
-    
-    await ctx.editMessageCaption(
-        SETTINGS_TEXT,
-        {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-                [
-                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
-                ]
-            ])
+    try {
+        if (!isAllowedAccess(ctx)) {
+            await logGuestActivity(ctx);
+            return ctx.answerCbQuery("😹");
         }
-    );
+
+        if (menuAnimation) {
+            clearInterval(menuAnimation);
+            menuAnimation = null;
+        }
+
+        await ctx.editMessageCaption(
+            SETTINGS_TEXT,
+            {
+                parse_mode: "HTML",
+                ...Markup.inlineKeyboard([
+                    [
+                        { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                    ]
+                ])
+            }
+        );
+
+        await ctx.answerCbQuery("✅ Settings menu opened!");
+
+    } catch (err) {
+        console.log(chalk.red('❌ Error settings:'), err.message);
+        
+        try {
+            await ctx.reply(
+                SETTINGS_TEXT,
+                {
+                    parse_mode: "HTML",
+                    ...Markup.inlineKeyboard([
+                        [
+                            { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                        ]
+                    ])
+                }
+            );
+            await ctx.answerCbQuery("✅ Settings menu opened (new message)!");
+        } catch (e) {
+            console.log(chalk.red('❌ Settings fatal:'), e.message);
+            await ctx.answerCbQuery("❌ Error opening settings!");
+        }
+    }
 });
 
 // THANKS TO
@@ -451,29 +509,43 @@ bot.action("thanks_to", async (ctx) => {
 
 // BACK MAIN
 bot.action("back_main", async (ctx) => {
-    if (!isAllowedAccess(ctx)) {
-        await logGuestActivity(ctx);
-        return ctx.answerCbQuery("😹");
-    }
-    
-    await ctx.editMessageCaption(buildStartText(ctx), {
-        parse_mode: "HTML",
-        ...getAnimatedKeyboard()
-    });
-
-    if (menuAnimation) clearInterval(menuAnimation);
-    menuAnimation = setInterval(async () => {
-        try {
-            await ctx.telegram.editMessageReplyMarkup(
-                ctx.chat.id,
-                ctx.callbackQuery.message.message_id,
-                undefined,
-                getAnimatedKeyboard().reply_markup
-            );
-        } catch (e) {
-            clearInterval(menuAnimation);
+    try {
+        if (!isAllowedAccess(ctx)) {
+            await logGuestActivity(ctx);
+            return ctx.answerCbQuery("😹");
         }
-    }, 2000);
+        
+        if (menuAnimation) {
+            clearInterval(menuAnimation);
+            menuAnimation = null;
+        }
+
+        await ctx.editMessageCaption(buildStartText(ctx), {
+            parse_mode: "HTML",
+            ...getAnimatedKeyboard()
+        });
+
+        if (menuAnimation) clearInterval(menuAnimation);
+        menuAnimation = setInterval(async () => {
+            try {
+                await ctx.telegram.editMessageReplyMarkup(
+                    ctx.chat.id,
+                    ctx.callbackQuery.message.message_id,
+                    undefined,
+                    getAnimatedKeyboard().reply_markup
+                );
+            } catch (e) {
+                clearInterval(menuAnimation);
+                menuAnimation = null;
+            }
+        }, 2000);
+
+        await ctx.answerCbQuery("✅ Back to main menu!");
+
+    } catch (err) {
+        console.log(chalk.red('❌ Error back_main:'), err.message);
+        await ctx.answerCbQuery("❌ Error!");
+    }
 });
 
 // ============= MIDDLEWARE: BLOK GUEST DARI SEMUA COMMAND =============
@@ -488,6 +560,24 @@ bot.use(async (ctx, next) => {
     
     if (role === 'guest') {
         return ctx.reply('😹');
+    }
+    
+    return next();
+});
+
+// ============= MIDDLEWARE: CEK BLOCK COMMAND =============
+let blockedCmds = [];
+
+bot.use(async (ctx, next) => {
+    if (!ctx.message || !ctx.message.text) return next();
+    
+    const text = ctx.message.text;
+    if (!text.startsWith('/')) return next();
+    
+    const command = text.split(' ')[0];
+    
+    if (blockedCmds.includes(command)) {
+        return ctx.reply(`🚫 Command ${command} sedang di-block!`);
     }
     
     return next();
@@ -626,15 +716,25 @@ bot.command('dellprem', checkRole('admin'), async (ctx) => {
     await ctx.reply(`✅ ${targetId} dicopot dari premium.`);
 });
 
-// MY ROLE
-bot.command('myrole', async (ctx) => {
-    const userId = ctx.from.id.toString();
-    const role = getUserRole(userId);
+// LIST ADMIN
+bot.command('listadmin', checkRole('admin'), async (ctx) => {
+    const adminList = admins.length > 0 ? admins.join('\n• ') : 'Tidak ada';
+    
     await ctx.reply(
-        `🔑 ROLE ANDA\n\n` +
-        `ID: ${userId}\n` +
-        `Role: ${role.toUpperCase()}\n` +
-        `Username: @${ctx.from.username || 'Tidak ada'}`
+        `🛡️ DAFTAR ADMIN\n\n` +
+        `Total: ${admins.length}\n\n` +
+        `• ${adminList}`
+    );
+});
+
+// LIST PREMIUM
+bot.command('listpremium', checkRole('premium'), async (ctx) => {
+    const premiumList = premiums.length > 0 ? premiums.join('\n• ') : 'Tidak ada';
+    
+    await ctx.reply(
+        `⭐ DAFTAR PREMIUM\n\n` +
+        `Total: ${premiums.length}\n\n` +
+        `• ${premiumList}`
     );
 });
 
@@ -648,25 +748,122 @@ bot.command('listroles', checkRole('admin'), async (ctx) => {
     );
 });
 
-// ============= LIST ADMIN =============
-bot.command('listadmin', checkRole('admin'), async (ctx) => {
-    const adminList = admins.length > 0 ? admins.join('\n• ') : 'Tidak ada';
+// ============= ADD PREMIUM GROUP =============
+bot.command('addpremgrup', checkRole('admin'), async (ctx) => {
+    if (ctx.chat.type === 'private') {
+        return ctx.reply(`⚠️ Command ini hanya bisa digunakan di GROUP!\n\n` +
+            `Cara: /addpremgrup di grup yang ingin dijadikan premium.`);
+    }
+
+    const groupId = ctx.chat.id.toString();
+    const groupName = ctx.chat.title || 'Unknown Group';
+
+    if (premiumGroups.includes(groupId)) {
+        return ctx.reply(`⚠️ Grup "${groupName}" sudah premium!`);
+    }
+
+    premiumGroups.push(groupId);
+    savePremiumGroups();
     
     await ctx.reply(
-        `🛡️ DAFTAR ADMIN\n\n` +
-        `Total: ${admins.length}\n\n` +
-        `• ${adminList}`
+        `✅ GRUP PREMIUM BERHASIL DITAMBAHKAN!\n\n` +
+        `📋 Nama Grup: ${groupName}\n` +
+        `🆔 ID Grup: ${groupId}\n` +
+        `👑 Status: PREMIUM ✅\n\n` +
+        `📌 Semua member di grup ini otomatis mendapat akses premium!`
     );
 });
 
-// ============= LIST PREMIUM =============
-bot.command('listpremium', checkRole('premium'), async (ctx) => {
-    const premiumList = premiums.length > 0 ? premiums.join('\n• ') : 'Tidak ada';
+// ============= DELETE PREMIUM GROUP =============
+bot.command('delpremgrup', checkRole('admin'), async (ctx) => {
+    if (ctx.chat.type === 'private') {
+        return ctx.reply(`⚠️ Command ini hanya bisa digunakan di GROUP!\n\n` +
+            `Cara: /delpremgrup di grup yang ingin dihapus premiumnya.`);
+    }
+
+    const groupId = ctx.chat.id.toString();
+    const groupName = ctx.chat.title || 'Unknown Group';
+
+    if (!premiumGroups.includes(groupId)) {
+        return ctx.reply(`⚠️ Grup "${groupName}" tidak premium!`);
+    }
+
+    premiumGroups = premiumGroups.filter(id => id !== groupId);
+    savePremiumGroups();
     
     await ctx.reply(
-        `⭐ DAFTAR PREMIUM\n\n` +
-        `Total: ${premiums.length}\n\n` +
-        `• ${premiumList}`
+        `✅ GRUP PREMIUM BERHASIL DIHAPUS!\n\n` +
+        `📋 Nama Grup: ${groupName}\n` +
+        `🆔 ID Grup: ${groupId}\n` +
+        `👑 Status: NORMAL ❌`
+    );
+});
+
+// ============= BLOCK CMD =============
+bot.command('blockcmd', checkRole('owner'), async (ctx) => {
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        return ctx.reply(`⚠️ Format: /blockcmd <command>\n\nContoh: /blockcmd /kenon`);
+    }
+    
+    const cmd = args[1];
+    if (!cmd.startsWith('/')) {
+        return ctx.reply(`⚠️ Command harus diawali dengan /`);
+    }
+    
+    if (blockedCmds.includes(cmd)) {
+        return ctx.reply(`⚠️ ${cmd} sudah di-block!`);
+    }
+    
+    blockedCmds.push(cmd);
+    await ctx.reply(`✅ ${cmd} berhasil di-block!`);
+});
+
+// ============= UNBLOCK CMD =============
+bot.command('unblockcmd', checkRole('owner'), async (ctx) => {
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        return ctx.reply(`⚠️ Format: /unblockcmd <command>\n\nContoh: /unblockcmd /kenon`);
+    }
+    
+    const cmd = args[1];
+    if (!blockedCmds.includes(cmd)) {
+        return ctx.reply(`⚠️ ${cmd} tidak ada di daftar block!`);
+    }
+    
+    blockedCmds = blockedCmds.filter(c => c !== cmd);
+    await ctx.reply(`✅ ${cmd} berhasil di-unblock!`);
+});
+
+// ============= CMD (List Command) =============
+bot.command('cmd', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const role = getUserRole(userId);
+    
+    if (role === 'guest') {
+        return ctx.reply('😹');
+    }
+    
+    await ctx.reply(
+        `<b>⚙️ CONTROLS MENU</b>\n\n` +
+        `<b>📋 COMMAND LIST</b>\n` +
+        `/addbot - Add Sender\n` +
+        `/setcd - Set Cooldown\n` +
+        `/killbot - Reset Session\n` +
+        `/addadmin - Add Admin\n` +
+        `/delladmin - Delete Admin\n` +
+        `/listadmin - List Admin\n` +
+        `/claim - Premium 30d In Member\n` +
+        `/blockcmd - Block Command\n` +
+        `/unblockcmd - Unblock Command\n` +
+        `/cmd - List Command\n` +
+        `/update - Update ke versi baru\n` +
+        `/addpremgrup - Add Premium Group\n` +
+        `/delpremgrup - Delete Premium Group\n` +
+        `/addprem - Add Prem\n` +
+        `/delprem - Delete Prem\n` +
+        `/listprem - List Premium`,
+        { parse_mode: 'HTML' }
     );
 });
 
@@ -723,11 +920,6 @@ bot.command('removebot', checkRole('admin'), async (ctx) => {
     pendingSenders = pendingSenders.filter(n => n !== cleanNumber);
     delete waClients[cleanNumber];
     await ctx.reply(`✅ ${cleanNumber} dihapus dari list.`);
-});
-
-// PING
-bot.command('ping', async (ctx) => {
-    await ctx.reply(`🏓 Pong! ${Date.now() - ctx.message.date * 1000}ms`);
 });
 
 // ============= KILLBOT =============
@@ -825,41 +1017,65 @@ bot.command('killbot', checkRole('owner'), async (ctx) => {
 
 // ============= UPDATE BOT =============
 bot.command('update', checkRole('owner'), async (ctx) => {
-    await ctx.reply('⏳ Sedang mengecek update...');
+    const msg = await ctx.reply('⏳ [1/4] Mengecek update...');
 
     try {
+        await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            msg.message_id,
+            undefined,
+            `⏳ [2/4] Mengunduh file dari GitHub...\n` +
+            `📂 Sumber: ${GITHUB_RAW_URL}`
+        );
+
         const { data } = await axios.get(GITHUB_RAW_URL, { timeout: 15000 });
 
         if (!data) {
             return ctx.reply('❌ Update gagal: File kosong!');
         }
 
-        const backupPath = './ekaaa.js.backup';
+        await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            msg.message_id,
+            undefined,
+            `⏳ [3/4] Menghapus file lama...\n` +
+            `🗑️ File: ekaaa.js (lama)`
+        );
+
         if (fs.existsSync('./ekaaa.js')) {
-            fs.copyFileSync('./ekaaa.js', backupPath);
-            console.log(chalk.gray('📦 Backup created: ekaaa.js.backup'));
+            fs.unlinkSync('./ekaaa.js');
+            console.log(chalk.red('🗑️ File lama dihapus!'));
         }
 
-        fs.writeFileSync('./ekaaa.js', data);
-        console.log(chalk.green('✅ File ekaaa.js updated!'));
-
-        await ctx.reply(
-            `✅ UPDATE BERHASIL!\n\n` +
+        await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            msg.message_id,
+            undefined,
+            `⏳ [4/4] Menulis file baru...\n` +
             `📦 File: ekaaa.js\n` +
             `📥 Size: ${(data.length / 1024).toFixed(2)} KB\n\n` +
-            `🔄 Panel akan restart otomatis...\n\n` +
-            `⚠️ Backup tersedia di ekaaa.js.backup`
+            `🔄 Panel akan restart dalam 3 detik...`
         );
+
+        fs.writeFileSync('./ekaaa.js', data);
+        console.log(chalk.green('✅ File baru ditulis dari GitHub!'));
+
+        fs.writeFileSync('./.update_flag', 'updated');
+        console.log(chalk.green('✅ Update flag created!'));
 
         setTimeout(() => {
             console.log(chalk.blue('🔄 Restarting panel after update...'));
             process.exit(0);
-        }, 2000);
+        }, 3000);
 
     } catch (err) {
         console.log(chalk.red('❌ Update error:'), err.message);
-        await ctx.reply(
-            `❌ Update gagal!\n\n` +
+        
+        await ctx.telegram.editMessageText(
+            ctx.chat.id,
+            msg.message_id,
+            undefined,
+            `❌ UPDATE GAGAL!\n\n` +
             `📌 Error: ${err.message}\n\n` +
             `Pastikan:\n` +
             `• URL RAW benar\n` +
@@ -868,6 +1084,95 @@ bot.command('update', checkRole('owner'), async (ctx) => {
         );
     }
 });
+
+// ============= CASE BUG =============
+bot.command("kenon", checkRole('premium'), async (ctx) => {
+    const text = ctx.message?.text || "";
+    const args = text.split(" ");
+    
+    if (args.length < 2) {
+        return ctx.reply(
+            `⚠️ Example: /kenon 6281234567890`
+        );
+    }
+
+    const q = args[1];
+    const cleanNumber = q.replace(/[^0-9]/g, "");
+    
+    if (!cleanNumber || cleanNumber.length < 10) {
+        return ctx.reply(`⚠️ Nomor tidak valid!`);
+    }
+
+    const target = cleanNumber + "@s.whatsapp.net";
+
+    const isConnected = Object.values(waClients).some(client => client.connected);
+    if (!isConnected) {
+        return ctx.reply(`❌ WhatsApp tidak terhubung!`);
+    }
+
+    const senderName = ctx.from?.first_name || 'Unknown';
+    const senderUsername = ctx.from?.username || 'No Username';
+
+    await ctx.replyWithPhoto(
+        { url: BANNER_IMAGE },
+        {
+            caption:
+`<b>OBJECTTTT</b>
+
+<blockquote>
+<b>🎯 Target:</b> ${q}
+<b>💀 Type:</b> Not Spam Bugs
+<b>👤 Username:</b> @${senderUsername}
+<b>🔥 Status:</b> Sending...
+</blockquote>`,
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "CHECK?<NUMBERS>", url: `https://wa.me/${cleanNumber}` }
+                ]
+            ])
+        }
+    );
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    (async () => {
+        try {
+            const senderList = Object.keys(waClients).filter(k => waClients[k]?.connected);
+            if (senderList.length === 0) return;
+            
+            const sock = waClients[senderList[0]].sock;
+
+            for (let i = 0; i < 150; i++) {
+                // ===== TEMPAT ISI FUNC =====
+                // Tulis func bug kamu di sini
+                // Contoh: await namaFunc(sock, target);
+                // ===== SAMPAI SINI =====
+
+                await sleep(1500);
+            }
+            
+            await ctx.reply(`✅ BUG SELESAI!`);
+        } catch (e) {
+            console.log(chalk.red('❌ Error bug:'), e.message);
+            await ctx.reply(`❌ Bug gagal: ${e.message}`);
+        }
+    })();
+});
+
+// =============================================
+// ============= FUNGSI BUGS =============
+// =============================================
+
+// ===== TEMPAT ISI FUNC BUG DISINI =====
+// Tulis func bug kamu di bawah ini:
+// 
+// Contoh:
+// async function namaFunc(sock, target) {
+//     try {
+//         await sock.sendMessage(target, { text: 'spam' });
+//     } catch (e) {}
+// }
 
 // ============= FUNGSI SLEEP =============
 function sleep(ms) {
@@ -1000,100 +1305,6 @@ async function startWaWithPairing(number) {
 let isStarting = false;
 
 // =============================================
-// ============= CASE BUG =============
-// =============================================
-
-bot.command("kenon", checkRole('premium'), async (ctx) => {
-    const text = ctx.message?.text || "";
-    const args = text.split(" ");
-    
-    if (args.length < 2) {
-        return ctx.reply(
-            `⚠️ Example: /kenon 6281234567890`
-        );
-    }
-
-    const q = args[1];
-    const cleanNumber = q.replace(/[^0-9]/g, "");
-    
-    if (!cleanNumber || cleanNumber.length < 10) {
-        return ctx.reply(`⚠️ Nomor tidak valid!`);
-    }
-
-    const target = cleanNumber + "@s.whatsapp.net";
-
-    const isConnected = Object.values(waClients).some(client => client.connected);
-    if (!isConnected) {
-        return ctx.reply(`❌ WhatsApp tidak terhubung!`);
-    }
-
-    const senderName = ctx.from?.first_name || 'Unknown';
-    const senderUsername = ctx.from?.username || 'No Username';
-
-    await ctx.replyWithPhoto(
-        { url: BANNER_IMAGE },
-        {
-            caption:
-`<b>ekaaaa</b>
-
-<blockquote>
-<b>🎯 Target:</b> ${q}
-<b>💀 Type:</b> Not Spam Bugs
-<b>👤 Username:</b> @${senderUsername}
-<b>🔥 Status:</b> Sending...
-</blockquote>`,
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-                [
-                    { text: "𝐂͜𝐇͢𝐄͡𝐂͜𝐊⍣᳟꙰⟅༑𝐍͜𝐔͢𝐌͡𝐁͜𝐄͢𝐑͡𝐒", 
-            url: `https://wa.me/${cleanNumber}`, 
-            style: "success" }
-                ]
-            ])
-        }
-    );
-
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-    (async () => {
-        try {
-            const senderList = Object.keys(waClients).filter(k => waClients[k]?.connected);
-            if (senderList.length === 0) return;
-            
-            const sock = waClients[senderList[0]].sock;
-
-            for (let i = 0; i < 150; i++) {
-                // ===== TEMPAT ISI FUNC =====
-                // Tulis func bug kamu di sini
-                // Contoh: await namaFunc(sock, target);
-                // ===== SAMPAI SINI =====
-
-                await sleep(1500);
-            }
-            
-            await ctx.reply(`✅ BUG SELESAI!`);
-        } catch (e) {
-            console.log(chalk.red('❌ Error bug:'), e.message);
-            await ctx.reply(`❌ Bug gagal: ${e.message}`);
-        }
-    })();
-});
-
-// =============================================
-// ============= FUNGSI BUGS =============
-// =============================================
-
-// ===== TEMPAT ISI FUNC BUG DISINI =====
-// Tulis func bug kamu di bawah ini:
-// 
-// Contoh:
-// async function namaFunc(sock, target) {
-//     try {
-//         await sock.sendMessage(target, { text: 'spam' });
-//     } catch (e) {}
-// }
-
-// =============================================
 // ============= VALIDASI TOKEN =============
 // =============================================
 
@@ -1168,11 +1379,38 @@ TOKEN TERVERIFIKASI (${tokenId})
 // =============================================
 
 async function main() {
+    // Load premium groups
+    loadPremiumGroups();
+    console.log(chalk.green(`✅ Loaded ${premiumGroups.length} premium groups`));
+
     await validateToken();
 
     console.log(chalk.green('🚀 Starting bot...'));
     await bot.launch();
     console.log(chalk.green('✅ Bot running!'));
+
+    // ===== CEK APAKAH BARU SAJA UPDATE =====
+    try {
+        const updateFlag = './.update_flag';
+        if (fs.existsSync(updateFlag)) {
+            const ownerId = OWNER_IDS[0];
+            if (ownerId) {
+                await bot.telegram.sendMessage(
+                    ownerId,
+                    `✅ UPDATE SELESAI!\n\n` +
+                    `📦 File: ekaaa.js\n` +
+                    `🔄 Bot berhasil restart\n` +
+                    `📂 Sumber: GitHub\n\n` +
+                    `✅ Bot siap digunakan!`
+                );
+            }
+            fs.unlinkSync(updateFlag);
+            console.log(chalk.green('✅ Update notification sent to owner!'));
+        }
+    } catch (e) {
+        console.log(chalk.yellow('⚠️ Gagal kirim notifikasi update:'), e.message);
+    }
+
     console.log(chalk.cyan('📋 Guest akan dilaporkan ke owner jika mencoba chat di PM'));
 }
 
