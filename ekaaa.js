@@ -45,6 +45,16 @@ let waClients = {};
 let activeSenders = [];
 let pendingSenders = [];
 
+// ============= COOLDOWN =============
+let cooldownConfig = {};
+const CD_DB = './cooldown.json';
+try {
+    if (fs.existsSync(CD_DB)) {
+        cooldownConfig = JSON.parse(fs.readFileSync(CD_DB, 'utf-8'));
+    }
+} catch (e) {}
+let userLastUse = {};
+
 // ============= FUNGSI ROLE =============
 function getUserRole(userId) {
     userId = userId.toString();
@@ -479,6 +489,21 @@ bot.use(async (ctx, next) => {
     return next();
 });
 
+// ============= COOLDOWN MIDDLEWARE =============
+bot.use(async (ctx, next) => {
+    if (!ctx.message || !ctx.message.text) return next();
+    const chatId = ctx.chat.id;
+    const cooldown = cooldownConfig[chatId] || 0;
+    const now = Date.now();
+    const last = userLastUse[chatId] || 0;
+    if (cooldown > 0 && now - last < cooldown) {
+        const remaining = Math.ceil((cooldown - (now - last)) / 1000);
+        return ctx.reply(`⏳ Cooldown! Tunggu ${remaining} detik.`);
+    }
+    userLastUse[chatId] = now;
+    return next();
+});
+
 let blockedCmds = [];
 
 bot.use(async (ctx, next) => {
@@ -520,11 +545,10 @@ async function getTargetId(ctx) {
 
 // ============= ROLE MANAGEMENT COMMANDS =============
 
+// ADD ADMIN
 bot.command('addadmin', checkRole('owner'), async (ctx) => {
     const targetId = await getTargetId(ctx);
-    if (!targetId) {
-        return ctx.reply(`⚠️ Format: /addadmin <id/username> atau reply pesan target`);
-    }
+    if (!targetId) return ctx.reply(`⚠️ Format: /addadmin <id/username> atau reply pesan target`);
     if (OWNER_IDS.includes(targetId)) return ctx.reply(`⚠️ ${targetId} adalah owner!`);
     if (admins.includes(targetId)) return ctx.reply(`⚠️ ${targetId} sudah admin.`);
     admins.push(targetId);
@@ -532,6 +556,7 @@ bot.command('addadmin', checkRole('owner'), async (ctx) => {
     await ctx.reply(`✅ ${targetId} ditambahkan sebagai admin.`);
 });
 
+// DELETE ADMIN
 bot.command('delladmin', checkRole('owner'), async (ctx) => {
     const targetId = await getTargetId(ctx);
     if (!targetId) return ctx.reply(`⚠️ Format: /delladmin <id/username> atau reply pesan target`);
@@ -542,9 +567,10 @@ bot.command('delladmin', checkRole('owner'), async (ctx) => {
     await ctx.reply(`✅ ${targetId} dicopot dari admin.`);
 });
 
-bot.command('addpremium', checkRole('admin'), async (ctx) => {
+// ADD PREMIUM
+bot.command('addprem', checkRole('admin'), async (ctx) => {
     const targetId = await getTargetId(ctx);
-    if (!targetId) return ctx.reply(`⚠️ Format: /addpremium <id/username> atau reply pesan target`);
+    if (!targetId) return ctx.reply(`⚠️ Format: /addprem <id/username> atau reply pesan target`);
     if (OWNER_IDS.includes(targetId) || admins.includes(targetId)) {
         return ctx.reply(`⚠️ ${targetId} sudah memiliki role lebih tinggi!`);
     }
@@ -554,27 +580,89 @@ bot.command('addpremium', checkRole('admin'), async (ctx) => {
     await ctx.reply(`✅ ${targetId} ditambahkan sebagai premium.`);
 });
 
-bot.command('dellprem', checkRole('admin'), async (ctx) => {
+// DELETE PREMIUM
+bot.command('delprem', checkRole('admin'), async (ctx) => {
     const targetId = await getTargetId(ctx);
-    if (!targetId) return ctx.reply(`⚠️ Format: /dellprem <id/username> atau reply pesan target`);
+    if (!targetId) return ctx.reply(`⚠️ Format: /delprem <id/username> atau reply pesan target`);
     if (!premiums.includes(targetId)) return ctx.reply(`⚠️ ${targetId} bukan premium.`);
     premiums = premiums.filter(id => id !== targetId);
     try { fs.writeFileSync('./premium.js', `module.exports = { premiums: ${JSON.stringify(premiums)} };`); } catch(e) {}
     await ctx.reply(`✅ ${targetId} dicopot dari premium.`);
 });
 
+// LIST ADMIN
 bot.command('listadmin', checkRole('admin'), async (ctx) => {
     const list = admins.length > 0 ? admins.join('\n• ') : 'Tidak ada';
     await ctx.reply(`🛡️ DAFTAR ADMIN\n\nTotal: ${admins.length}\n\n• ${list}`);
 });
 
-bot.command('listpremium', checkRole('premium'), async (ctx) => {
+// LIST PREMIUM
+bot.command('listprem', checkRole('premium'), async (ctx) => {
     const list = premiums.length > 0 ? premiums.join('\n• ') : 'Tidak ada';
     await ctx.reply(`⭐ DAFTAR PREMIUM\n\nTotal: ${premiums.length}\n\n• ${list}`);
 });
 
+// LIST ROLES
 bot.command('listroles', checkRole('admin'), async (ctx) => {
     await ctx.reply(`📋 DAFTAR ROLE\n\n👑 Owner:\n• ${OWNER_IDS.join('\n• ') || 'Tidak ada'}\n\n🛡️ Admin:\n• ${admins.join('\n• ') || 'Tidak ada'}\n\n⭐ Premium:\n• ${premiums.join('\n• ') || 'Tidak ada'}`);
+});
+
+// ============= SET COOLDOWN =============
+bot.command('setcd', checkRole('admin'), async (ctx) => {
+    const args = ctx.message.text.split(' ');
+    if (args.length < 2) {
+        return ctx.reply(`⚠️ Format: /setcd <detik>\n\nContoh: /setcd 10\n\n💡 0 = nonaktifkan cooldown`);
+    }
+    const seconds = parseInt(args[1]);
+    if (isNaN(seconds) || seconds < 0) {
+        return ctx.reply(`⚠️ Masukkan angka yang valid!`);
+    }
+    const chatId = ctx.chat.id;
+    userLastUse[chatId] = 0;
+    cooldownConfig[chatId] = seconds * 1000;
+    fs.writeFileSync(CD_DB, JSON.stringify(cooldownConfig, null, 2));
+    await ctx.reply(`✅ Cooldown diset ke ${seconds} detik!`);
+});
+
+// ============= CLAIM PREMIUM =============
+bot.command('claim', async (ctx) => {
+    const userId = ctx.from.id.toString();
+    const username = ctx.from.username || 'Tidak ada username';
+    
+    if (premiums.includes(userId) || admins.includes(userId) || OWNER_IDS.includes(userId)) {
+        return ctx.reply(`⚠️ Kamu sudah premium!`);
+    }
+    
+    const CLAIM_DB = './claim.json';
+    let claimData = {};
+    try {
+        if (fs.existsSync(CLAIM_DB)) {
+            claimData = JSON.parse(fs.readFileSync(CLAIM_DB, 'utf-8'));
+        }
+    } catch (e) {}
+    
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    
+    if (claimData[userId] && (now - claimData[userId]) < thirtyDays) {
+        const remaining = Math.ceil((thirtyDays - (now - claimData[userId])) / (24 * 60 * 60 * 1000));
+        return ctx.reply(`⚠️ Kamu sudah claim premium!\n📅 Sisa: ${remaining} hari lagi`);
+    }
+    
+    premiums.push(userId);
+    fs.writeFileSync('./premium.js', `module.exports = { premiums: ${JSON.stringify(premiums)} };`);
+    
+    claimData[userId] = now;
+    fs.writeFileSync(CLAIM_DB, JSON.stringify(claimData, null, 2));
+    
+    await ctx.reply(
+        `✅ CLAIM BERHASIL!\n\n` +
+        `👤 User: @${username}\n` +
+        `🆔 ID: ${userId}\n` +
+        `⭐ Status: PREMIUM ✅\n` +
+        `📅 Durasi: 30 hari\n\n` +
+        `📌 Kamu bisa claim lagi setelah 30 hari!`
+    );
 });
 
 // ============= PREMIUM GROUP =============
@@ -625,11 +713,22 @@ bot.command('cmd', async (ctx) => {
     if (role === 'free') return ctx.reply('😹');
     await ctx.reply(
         `<b>⚙️ CONTROLS MENU</b>\n\n<b>📋 COMMAND LIST</b>\n` +
-        `/addbot - Add Sender\n/setcd - Set Cooldown\n/killbot - Reset Session\n` +
-        `/addadmin - Add Admin\n/delladmin - Delete Admin\n/listadmin - List Admin\n` +
-        `/claim - Premium 30d In Member\n/blockcmd - Block Command\n/unblockcmd - Unblock Command\n` +
-        `/cmd - List Command\n/update - Update ke versi baru\n/addpremgrup - Add Premium Group\n` +
-        `/delpremgrup - Delete Premium Group\n/addprem - Add Prem\n/delprem - Delete Prem\n/listprem - List Premium`,
+        `/addbot - Add Sender\n` +
+        `/setcd - Set Cooldown\n` +
+        `/killbot - Reset Session\n` +
+        `/addadmin - Add Admin\n` +
+        `/delladmin - Delete Admin\n` +
+        `/listadmin - List Admin\n` +
+        `/claim - Premium 30d In Member\n` +
+        `/blockcmd - Block Command\n` +
+        `/unblockcmd - Unblock Command\n` +
+        `/cmd - List Command\n` +
+        `/update - Update ke versi baru\n` +
+        `/addpremgrup - Add Premium Group\n` +
+        `/delpremgrup - Delete Premium Group\n` +
+        `/addprem - Add Prem\n` +
+        `/delprem - Delete Prem\n` +
+        `/listprem - List Premium`,
         { parse_mode: 'HTML' }
     );
 });
@@ -731,6 +830,7 @@ bot.command('update', checkRole('owner'), async (ctx) => {
         await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `❌ UPDATE GAGAL!\n\n📌 Error: ${err.message}`);
     }
 });
+
 // ============= CASE BUG =============
 bot.command("kenon", checkRole('premium'), async (ctx) => {
     const args = ctx.message.text.split(' ');
