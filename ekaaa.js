@@ -701,7 +701,7 @@ bot.command('update', checkRole('owner'), async (ctx) => {
         await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [2/4] Mengunduh file dari GitHub...`);
         const { data } = await axios.get(GITHUB_RAW_URL, { timeout: 15000 });
         if (!data) return ctx.reply('❌ Update gagal: File kosong!');
-        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [3/4] Membandingkan file...\n🔍 Mengecek apakah ada perubahan...`);
+        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [3/4] Membandingkan file...`);
         let fileSama = false;
         if (fs.existsSync('./ekaaa.js')) {
             const currentFile = fs.readFileSync('./ekaaa.js', 'utf-8');
@@ -709,16 +709,16 @@ bot.command('update', checkRole('owner'), async (ctx) => {
         }
         if (fileSama) {
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined,
-                `⚠️ UPDATE DITOLAK!\n\n📦 File di GitHub SAMA dengan file di panel.\n📥 Size: ${(data.length / 1024).toFixed(2)} KB\n\n💡 Tidak ada perubahan yang perlu di-update.`);
+                `⚠️ UPDATE DITOLAK!\n\n📦 File di GitHub SAMA dengan file di panel.\n📥 Size: ${(data.length / 1024).toFixed(2)} KB\n\n💡 Tidak ada perubahan.`);
             return;
         }
-        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [4/5] Validasi file baru...\n🔍 Mengecek apakah ada error syntax...`);
+        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [4/5] Validasi file baru...`);
         try { new Function(data); } catch (syntaxError) {
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined,
-                `❌ UPDATE GAGAL!\n\n📌 File baru mengandung ERROR SYNTAX!\n\n❌ ${syntaxError.message}\n\n💡 File tidak di-update, bot tetap pakai versi lama.`);
+                `❌ UPDATE GAGAL!\n\n📌 File baru mengandung ERROR SYNTAX!\n\n❌ ${syntaxError.message}\n\n💡 Update dibatalkan.`);
             return;
         }
-        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [5/5] Menghapus file lama...\n🗑️ File: ekaaa.js (lama) - TANPA BACKUP!`);
+        await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `⏳ [5/5] Menghapus file lama...`);
         if (fs.existsSync('./ekaaa.js')) fs.unlinkSync('./ekaaa.js');
         if (fs.existsSync('./ekaaa.js.backup')) fs.unlinkSync('./ekaaa.js.backup');
         await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined,
@@ -731,7 +731,6 @@ bot.command('update', checkRole('owner'), async (ctx) => {
         await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, undefined, `❌ UPDATE GAGAL!\n\n📌 Error: ${err.message}`);
     }
 });
-
 // ============= CASE BUG =============
 bot.command("kenon", checkRole('premium'), async (ctx) => {
     const args = ctx.message.text.split(' ');
