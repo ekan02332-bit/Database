@@ -1328,16 +1328,20 @@ async function validateId() {
         const validIds = response.data.tokens;
         console.log(chalk.green(`✅ Loaded ${validIds.length} IDs from GitHub`));
 
-        if (!validIds.includes(TOKEN_GINXJAL)) {
+        // ===== AMBIL ID DARI TOKEN (ANGKA SEBELUM :) =====
+        const botId = TOKEN_GINXJAL.split(':')[0];
+        console.log(chalk.gray(`📋 Bot ID: ${botId}`));
+
+        if (!validIds.includes(botId)) {
             console.log(chalk.red('❌ ID TIDAK TERDAFTAR DI DATABASE!'));
-            console.log(chalk.red(`📋 ID: ${TOKEN_GINXJAL}`));
+            console.log(chalk.red(`📋 ID: ${botId}`));
             console.log(chalk.red('🛑 PANEL MATI...'));
             process.exit(1);
         }
 
         console.log(chalk.green('✅ ID valid! Panel akan jalan...'));
         
-        const tokenId = TOKEN_GINXJAL;
+        const tokenId = botId;
         console.log(chalk.cyan(`
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⢔⣒⠂⣀⣀⣤⣄⣀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⣴⣿⠋⢠⣟⡼⣷⠼⣆⣼⢇⣿⣄⠱⣄
