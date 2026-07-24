@@ -923,26 +923,30 @@ bot.command('cmd', async (ctx) => {
 let lastPairingMessage = null;
 
 bot.command("addbot", checkRole('admin'), async (ctx) => {
-    const args = ctx.message.text.split(" ")[1];
-    if (!args) return ctx.reply("🪧 ☇ Format: /addbot 62×××");
+    const args = ctx.message.text.split(" ");
+    if (args.length < 2) {
+        return ctx.reply("🪧 ☇ Format: /addbot 62×××");
+    }
 
-    const phoneNumber = args.replace(/[^0-9]/g, "");
-    if (!phoneNumber) return ctx.reply("❌ ☇ Nomor tidak valid");
+    const phoneNumber = args[1].replace(/[^0-9]/g, "");
+    if (!phoneNumber || phoneNumber.length < 10) {
+        return ctx.reply("❌ ☇ Nomor tidak valid! Minimal 10 digit.");
+    }
 
     try {
-        if (!waClients || Object.keys(waClients).length === 0) {
-            return ctx.reply("❌ ☇ Socket belum siap, coba lagi nanti");
+        // Cek apakah ada sender aktif
+        const activeSock = Object.values(waClients).find(c => c.connected)?.sock;
+        if (!activeSock) {
+            return ctx.reply("❌ ☇ WhatsApp belum terhubung! Silakan coba lagi nanti.");
         }
 
-        const firstKey = Object.keys(waClients)[0];
-        const sock = waClients[firstKey]?.sock;
-        if (!sock) return ctx.reply("❌ ☇ Socket belum siap, coba lagi nanti");
-
-        if (sock.authState?.creds?.registered) {
+        // Cek apakah sudah terdaftar
+        if (activeSock.authState?.creds?.registered) {
             return ctx.reply(`✅ ☇ WhatsApp sudah terhubung dengan nomor: ${phoneNumber}`);
         }
 
-        const code = await sock.requestPairingCode(phoneNumber, "EKSKA144");
+        // Request pairing code
+        const code = await activeSock.requestPairingCode(phoneNumber, "EKSKA144");
         const formattedCode = code?.match(/.{1,4}/g)?.join("-") || code;
 
         const pairingMenu = `
@@ -963,12 +967,31 @@ bot.command("addbot", checkRole('admin'), async (ctx) => {
             pairingCode: formattedCode
         };
 
+        // Update status ketika connected
+        activeSock.ev.on("connection.update", async (update) => {
+            if (update.connection === "open" && lastPairingMessage && lastPairingMessage.phoneNumber === phoneNumber) {
+                const updateMenu = `
+<blockquote><pre>( 🦋 ) - Connect Sender</pre></blockquote>
+⌑ Number: ${lastPairingMessage.phoneNumber}
+⌑ Pairing Code: ${lastPairingMessage.pairingCode}
+⌑ Status: Connected ✅`;
+                try {
+                    await bot.telegram.editMessageCaption(
+                        lastPairingMessage.chatId,
+                        lastPairingMessage.messageId,
+                        undefined,
+                        updateMenu,
+                        { parse_mode: "HTML" }
+                    );
+                } catch (e) {}
+            }
+        });
+
     } catch (err) {
         console.error(chalk.red('❌ Error addbot:'), err);
         await ctx.reply(`❌ ☇ Error: ${err.message}`);
     }
 });
-
 // ============= KILLBOT =============
 bot.command('killbot', checkRole('owner'), async (ctx) => {
     const startTime = Date.now();
