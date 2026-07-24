@@ -920,75 +920,115 @@ bot.command('cmd', async (ctx) => {
 });
 
 // ============= ADD BOT =============
-bot.command("addbot", checkOwner, async (ctx) => {
-  try {
-    if (!sock) {
-      return ctx.reply("❌ Socket belum siap. Restart bot dulu.");
-    }
+bot.command("addbot", checkRole('admin'), async (ctx) => {
+    try {
+        // Cek apakah ada sender aktif
+        const activeSock = Object.values(waClients).find(c => c.connected)?.sock;
+        if (!activeSock) {
+            return ctx.reply("❌ Socket belum siap. Restart bot dulu.");
+        }
 
-    if (isWhatsAppConnected && sock.user) {
-      return ctx.reply("✅ WhatsApp sudah terhubung.");
-    }
+        // Cek apakah sudah terhubung
+        if (activeSock.user) {
+            return ctx.reply("✅ WhatsApp sudah terhubung.");
+        }
 
-    if (global.pairingMessage) {
-      return ctx.reply("⚠️ Pairing masih aktif, tunggu dulu.");
-    }
+        // Cek pairing masih aktif
+        if (global.pairingMessage) {
+            return ctx.reply("⚠️ Pairing masih aktif, tunggu dulu.");
+        }
 
-    const args = ctx.message.text.split(" ");
-    if (args.length < 2) {
-      return ctx.reply("Example:\n/addbot 628xxxx");
-    }
+        const args = ctx.message.text.split(" ");
+        if (args.length < 2) {
+            return ctx.reply("Example:\n/addbot 628xxxx");
+        }
 
-    let phoneNumber = args[1].replace(/[^0-9]/g, "");
+        let phoneNumber = args[1].replace(/[^0-9]/g, "");
 
-    
-    if (phoneNumber.startsWith("08")) {
-      phoneNumber = "62" + phoneNumber.slice(1);
-    }
+        // Ubah 08xxx → 628xxx
+        if (phoneNumber.startsWith("08")) {
+            phoneNumber = "62" + phoneNumber.slice(1);
+        }
 
-    
-    if (phoneNumber.length < 8 || phoneNumber.length > 15) {
-      return ctx.reply("❌ Nomor tidak valid.\nGunakan kode negara.\n\nExample:\n/addbot 628xxxx");
-    }
+        // Validasi panjang nomor
+        if (phoneNumber.length < 8 || phoneNumber.length > 15) {
+            return ctx.reply("❌ Nomor tidak valid.\nGunakan kode negara.\n\nExample:\n/addbot 628xxxx");
+        }
 
-    await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1000));
 
-    const code = await sock.requestPairingCode(phoneNumber);
-    if (!code) return ctx.reply("❌ Gagal ambil pairing code.");
+        const code = await activeSock.requestPairingCode(phoneNumber);
+        if (!code) return ctx.reply("❌ Gagal ambil pairing code.");
 
-    const formattedCode = code.match(/.{1,4}/g)?.join("-") || code;
+        const formattedCode = code.match(/.{1,4}/g)?.join("-") || code;
 
-    const msg = await ctx.replyWithPhoto(
-      "https://files.catbox.moe/v6m3ig.jpg",//ganti jadi url catbox gambar lu
-      {
-        caption:
+        const msg = await ctx.replyWithPhoto(
+            BANNER_IMAGE,
+            {
+                caption:
 `<pre>⬡═―⊱「 𝑶𝑩𝑱𝑬𝑪𝑻𝑻𝑻 」⊰―═⬡
        
   ⬡═―⊱〔 REQUEST PAIRING 〕⊰―═⬡
 ϟ  Nomor  : ${phoneNumber}
 ϟ  Kode   : ${formattedCode}
-ϟ  Note  : KALO GAGAL PAIR HAPUS SENSASION 
+ϟ  Note   : KALO GAGAL PAIR HAPUS SESSION
 
 ϟ  🟡 Status : Waiting for connection...
 </pre>`,
-        parse_mode: "HTML"
-      }
-    );
+                parse_mode: "HTML"
+            }
+        );
 
-    global.pairingMessage = {
-      chatId: msg.chat.id,
-      messageId: msg.message_id
-    };
+        global.pairingMessage = {
+            chatId: msg.chat.id,
+            messageId: msg.message_id,
+            phoneNumber,
+            pairingCode: formattedCode
+        };
 
-    setTimeout(() => {
-      global.pairingMessage = null;
-    }, 60000);
+        // Auto clear setelah 60 detik
+        setTimeout(() => {
+            global.pairingMessage = null;
+        }, 60000);
 
-  } catch (err) {
-    console.log("Pairing error FULL:", err);
-    global.pairingMessage = null;
-    ctx.reply("❌ Gagal pairing!");
-  }
+        // Update status ketika connected
+        const updateHandler = (update) => {
+            if (update.connection === "open" && global.pairingMessage && global.pairingMessage.phoneNumber === phoneNumber) {
+                const updateMenu =
+`<pre>⬡═―⊱「 𝑶𝑩𝑱𝑬𝑪𝑻𝑻𝑻 」⊰―═⬡
+       
+  ⬡═―⊱〔 REQUEST PAIRING 〕⊰―═⬡
+ϟ  Nomor  : ${global.pairingMessage.phoneNumber}
+ϟ  Kode   : ${global.pairingMessage.pairingCode}
+ϟ  Note   : PAIRING BERHASIL!
+
+ϟ  🟢 Status : Connected ✅
+</pre>`;
+                try {
+                    bot.telegram.editMessageCaption(
+                        global.pairingMessage.chatId,
+                        global.pairingMessage.messageId,
+                        undefined,
+                        updateMenu,
+                        { parse_mode: "HTML" }
+                    );
+                } catch (e) {}
+                global.pairingMessage = null;
+            }
+        };
+
+        activeSock.ev.on("connection.update", updateHandler);
+
+        // Hapus listener setelah 70 detik biar gak numpuk
+        setTimeout(() => {
+            activeSock.ev.off("connection.update", updateHandler);
+        }, 70000);
+
+    } catch (err) {
+        console.log(chalk.red('❌ Pairing error:'), err);
+        global.pairingMessage = null;
+        ctx.reply("❌ Gagal pairing!");
+    }
 });
 // ============= KILLBOT =============
 bot.command('killbot', checkRole('owner'), async (ctx) => {
