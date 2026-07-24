@@ -23,7 +23,7 @@ try {
 const BANNER_IMAGE = "https://files.catbox.moe/ve6d5g.jpg";
 
 // ============= GITHUB DATABASE (TOKENS = ID) =============
-const GITHUB_DB_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/tokens.json';
+const GITHUB_DB_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/token.json';
 
 // ============= GITHUB UPDATE URL =============
 const GITHUB_RAW_URL = 'https://raw.githubusercontent.com/ekan02332-bit/Database/main/ekaaa.js';
@@ -920,77 +920,75 @@ bot.command('cmd', async (ctx) => {
 });
 
 // ============= ADD BOT =============
-let lastPairingMessage = null;
+bot.command("addbot", checkOwner, async (ctx) => {
+  try {
+    if (!sock) {
+      return ctx.reply("❌ Socket belum siap. Restart bot dulu.");
+    }
 
-bot.command("addbot", checkRole('admin'), async (ctx) => {
+    if (isWhatsAppConnected && sock.user) {
+      return ctx.reply("✅ WhatsApp sudah terhubung.");
+    }
+
+    if (global.pairingMessage) {
+      return ctx.reply("⚠️ Pairing masih aktif, tunggu dulu.");
+    }
+
     const args = ctx.message.text.split(" ");
     if (args.length < 2) {
-        return ctx.reply("🪧 ☇ Format: /addbot 62×××");
+      return ctx.reply("Example:\n/addbot 628xxxx");
     }
 
-    const phoneNumber = args[1].replace(/[^0-9]/g, "");
-    if (!phoneNumber || phoneNumber.length < 10) {
-        return ctx.reply("❌ ☇ Nomor tidak valid! Minimal 10 digit.");
+    let phoneNumber = args[1].replace(/[^0-9]/g, "");
+
+    
+    if (phoneNumber.startsWith("08")) {
+      phoneNumber = "62" + phoneNumber.slice(1);
     }
 
-    try {
-        // Cek apakah ada sender aktif
-        const activeSock = Object.values(waClients).find(c => c.connected)?.sock;
-        if (!activeSock) {
-            return ctx.reply("❌ ☇ WhatsApp belum terhubung! Silakan coba lagi nanti.");
-        }
-
-        // Cek apakah sudah terdaftar
-        if (activeSock.authState?.creds?.registered) {
-            return ctx.reply(`✅ ☇ WhatsApp sudah terhubung dengan nomor: ${phoneNumber}`);
-        }
-
-        // Request pairing code
-        const code = await activeSock.requestPairingCode(phoneNumber, "EKSKA144");
-        const formattedCode = code?.match(/.{1,4}/g)?.join("-") || code;
-
-        const pairingMenu = `
-<blockquote><pre>( 🦋 ) - Connect Sender</pre></blockquote>
-⌑ Number: ${phoneNumber}
-⌑ Pairing Code: ${formattedCode}
-⌑ Status: Not Connected`;
-
-        const sentMsg = await ctx.replyWithPhoto(BANNER_IMAGE, {
-            caption: pairingMenu,
-            parse_mode: "HTML"
-        });
-
-        lastPairingMessage = {
-            chatId: ctx.chat.id,
-            messageId: sentMsg.message_id,
-            phoneNumber,
-            pairingCode: formattedCode
-        };
-
-        // Update status ketika connected
-        activeSock.ev.on("connection.update", async (update) => {
-            if (update.connection === "open" && lastPairingMessage && lastPairingMessage.phoneNumber === phoneNumber) {
-                const updateMenu = `
-<blockquote><pre>( 🦋 ) - Connect Sender</pre></blockquote>
-⌑ Number: ${lastPairingMessage.phoneNumber}
-⌑ Pairing Code: ${lastPairingMessage.pairingCode}
-⌑ Status: Connected ✅`;
-                try {
-                    await bot.telegram.editMessageCaption(
-                        lastPairingMessage.chatId,
-                        lastPairingMessage.messageId,
-                        undefined,
-                        updateMenu,
-                        { parse_mode: "HTML" }
-                    );
-                } catch (e) {}
-            }
-        });
-
-    } catch (err) {
-        console.error(chalk.red('❌ Error addbot:'), err);
-        await ctx.reply(`❌ ☇ Error: ${err.message}`);
+    
+    if (phoneNumber.length < 8 || phoneNumber.length > 15) {
+      return ctx.reply("❌ Nomor tidak valid.\nGunakan kode negara.\n\nExample:\n/addbot 628xxxx");
     }
+
+    await new Promise(r => setTimeout(r, 1000));
+
+    const code = await sock.requestPairingCode(phoneNumber);
+    if (!code) return ctx.reply("❌ Gagal ambil pairing code.");
+
+    const formattedCode = code.match(/.{1,4}/g)?.join("-") || code;
+
+    const msg = await ctx.replyWithPhoto(
+      "https://files.catbox.moe/v6m3ig.jpg",//ganti jadi url catbox gambar lu
+      {
+        caption:
+`<pre>⬡═―⊱「 𝑶𝑩𝑱𝑬𝑪𝑻𝑻𝑻 」⊰―═⬡
+       
+  ⬡═―⊱〔 REQUEST PAIRING 〕⊰―═⬡
+ϟ  Nomor  : ${phoneNumber}
+ϟ  Kode   : ${formattedCode}
+ϟ  Note  : KALO GAGAL PAIR HAPUS SENSASION 
+
+ϟ  🟡 Status : Waiting for connection...
+</pre>`,
+        parse_mode: "HTML"
+      }
+    );
+
+    global.pairingMessage = {
+      chatId: msg.chat.id,
+      messageId: msg.message_id
+    };
+
+    setTimeout(() => {
+      global.pairingMessage = null;
+    }, 60000);
+
+  } catch (err) {
+    console.log("Pairing error FULL:", err);
+    global.pairingMessage = null;
+    ctx.reply("❌ Gagal pairing!");
+  }
 });
 // ============= KILLBOT =============
 bot.command('killbot', checkRole('owner'), async (ctx) => {
@@ -1213,34 +1211,6 @@ bot.command("testfunction", async (ctx) => {
 });
 
 //==============CASEFITUR============
-bot.command("game", async (ctx) => {
-  try {
-    const videoList = [
-      "https://files.catbox.moe/nmceni.mp4",
-      "https://files.catbox.moe/tpko98.mp4",
-      "https://files.catbox.moe/xuvshz.mp4",
-      "https://files.catbox.moe/1a8fa3.mp4",
-      "https://files.catbox.moe/w76gnq.mp4",
-      "https://files.catbox.moe/vxhall.mp4",
-      "https://files.catbox.moe/u2ktga.mp4"
-    ];
-
-    // ============ KIRIM PESAN "SABAR" DULU ============
-    await ctx.reply("⏳ Sabar ya, lagi ngambil video random...");
-    // ==================================================
-
-    const randomIndex = Math.floor(Math.random() * videoList.length);
-    const randomVideo = videoList[randomIndex];
-
-    await ctx.replyWithVideo(randomVideo, {
-      caption: `game`
-    });
-
-  } catch (error) {
-    console.error("Error videorandom:", error);
-    ctx.reply("❌ Gagal mengambil video random.");
-  }
-});
 
 // ============= FUNGSI SLEEP =============
 function sleep(ms) {
