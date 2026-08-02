@@ -6,23 +6,27 @@
     "seller": 604545282,
     "seller_name": "EkaMasihEsempe",
     "target": "@BackupEkaMasihEsempe",
-    "role": "MEMBER",
-    "upgrade": false,
-    "fromRole": null,
-    "toRole": null,
-    "harga": 20000,
+    "upgrade": true,
+    "fromRole": "MEMBER",
+    "toRole": "TK",
+    "harga": 5000,
     "payment": "LUNAS",
     "fee": 0,
     "used": false,
     "status": "APPROVED",
-    "created_at": 1785628844374,
-    "created_at_readable": "02/08/2026 08.00.44",
-    "invite_link": "https://t.me/+laXlRg3gAxNmZGRl",
+    "created_at": 1785628928251,
+    "created_at_readable": "02/08/2026 08.02.08",
+    "invite_link": "https://t.me/+VHcisSpvgS1lODhl",
     "approved_by": 604545282,
-    "approved_at": 1785628850533,
-    "approved_at_readable": "02/08/2026 08.00.50",
+    "approved_at": 1785628940839,
+    "approved_at_readable": "02/08/2026 08.02.20",
     "invite_links": {
-      "MEMBER": "https://t.me/+laXlRg3gAxNmZGRl"
+      "TK": "https://t.me/+VHcisSpvgS1lODhl",
+      "OWNER": "https://t.me/+6tLSBzpezNdiMjA1",
+      "MODERATOR": "https://t.me/+ckS-3biE7LMwYTJl",
+      "PT": "https://t.me/+dLXJ09Dd9PJhYTk1",
+      "RESELLER": "https://t.me/+-31_zcukMUVlYzFl",
+      "MEMBER": "https://t.me/+4tsbCBkqzUllYTdl"
     }
   }
 ]
