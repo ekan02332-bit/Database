@@ -24,5 +24,31 @@
     "invite_links": {
       "MEMBER": "https://t.me/+bxbWQujPdgwyNWNl"
     }
+  },
+  {
+    "id": "0007",
+    "buyer": 604545282,
+    "buyer_name": "EkaMasihEsempe",
+    "seller": 604545282,
+    "seller_name": "EkaMasihEsempe",
+    "target": "@penzoyzy29",
+    "role": "MEMBER",
+    "upgrade": false,
+    "fromRole": null,
+    "toRole": null,
+    "harga": 20000,
+    "payment": "LUNAS",
+    "fee": 0,
+    "used": false,
+    "status": "APPROVED",
+    "created_at": 1785846593717,
+    "created_at_readable": "04/08/2026 20.29.53",
+    "invite_link": "https://t.me/+H5iVPcTq6k03N2Vl",
+    "approved_by": 604545282,
+    "approved_at": 1785846645033,
+    "approved_at_readable": "04/08/2026 20.30.45",
+    "invite_links": {
+      "MEMBER": "https://t.me/+H5iVPcTq6k03N2Vl"
+    }
   }
 ]
