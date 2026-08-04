@@ -1,1 +1,28 @@
-[]
+[
+  {
+    "id": "0006",
+    "buyer": 604545282,
+    "buyer_name": "EkaMasihEsempe",
+    "seller": 604545282,
+    "seller_name": "EkaMasihEsempe",
+    "target": "@Rif_Vorelx",
+    "role": "MEMBER",
+    "upgrade": false,
+    "fromRole": null,
+    "toRole": null,
+    "harga": 20000,
+    "payment": "LUNAS",
+    "fee": 0,
+    "used": false,
+    "status": "APPROVED",
+    "created_at": 1785844096096,
+    "created_at_readable": "04/08/2026 19.48.16",
+    "invite_link": "https://t.me/+bxbWQujPdgwyNWNl",
+    "approved_by": 604545282,
+    "approved_at": 1785844103749,
+    "approved_at_readable": "04/08/2026 19.48.23",
+    "invite_links": {
+      "MEMBER": "https://t.me/+bxbWQujPdgwyNWNl"
+    }
+  }
+]
