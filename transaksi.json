@@ -1,1 +1,33 @@
-[]
+[
+  {
+    "id": "0008",
+    "buyer": 604545282,
+    "buyer_name": "EkaMasihEsempe",
+    "seller": 604545282,
+    "seller_name": "EkaMasihEsempe",
+    "target": "@kontol",
+    "role": "TK",
+    "upgrade": false,
+    "fromRole": null,
+    "toRole": null,
+    "harga": 10000,
+    "payment": "LUNAS",
+    "fee": 0,
+    "used": false,
+    "status": "APPROVED",
+    "created_at": 1785924460047,
+    "created_at_readable": "05/08/2026 18.07.40",
+    "invite_link": "https://t.me/+gfSdaWZMmahmODc9",
+    "approved_by": 604545282,
+    "approved_at": 1785924467167,
+    "approved_at_readable": "05/08/2026 18.07.47",
+    "invite_links": {
+      "TK": "https://t.me/+gfSdaWZMmahmODc9",
+      "OWNER": "https://t.me/+ipNI8tiY-odlM2I9",
+      "MODERATOR": "https://t.me/+vqb9pGzPTm4yYjk1",
+      "PT": "https://t.me/+mUPTOpkx_u9hY2I9",
+      "RESELLER": "https://t.me/+4nX3VDhE05kzMDc1",
+      "MEMBER": "https://t.me/+NUvPoJ5dhZkzYzdl"
+    }
+  }
+]
