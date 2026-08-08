@@ -5,5 +5,12 @@
     "role": "TK",
     "expired": 1788516462651,
     "created_at": 1785924462651
+  },
+  {
+    "id": 604545282,
+    "username": "@VICCLOUX",
+    "role": "MEMBER",
+    "expired": 1788759068675,
+    "created_at": 1786167068675
   }
 ]
