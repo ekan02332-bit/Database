@@ -1,3 +1,13 @@
 {
-  "coupons": []
+  "coupons": [
+    {
+      "code": "Ekszy-URPFU2RF",
+      "role": "member",
+      "status": "unused",
+      "createdBy": "EkaMasihEsempe",
+      "createdAt": "2026-09-27T04:59:05.623Z",
+      "usedBy": null,
+      "usedAt": null
+    }
+  ]
 }
