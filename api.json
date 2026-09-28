@@ -26,6 +26,15 @@
       "createdAt": "2026-09-27T12:05:16.736Z",
       "usedBy": null,
       "usedAt": null
+    },
+    {
+      "code": "Ekszy-BLAJLKUS",
+      "role": "moderator",
+      "status": "unused",
+      "createdBy": "ponzy29",
+      "createdAt": "2026-09-28T13:20:25.432Z",
+      "usedBy": null,
+      "usedAt": null
     }
   ]
 }
